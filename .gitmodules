@@ -1,0 +1,6 @@
+[submodule "sl-analyze-agent"]
+	path = sl-analyze-agent
+	url = git@github.com:SashkoMolodec/sl-analyzer-agent.git
+[submodule "sl-main-agent"]
+	path = sl-main-agent
+	url = git@github.com:SashkoMolodec/sl-main-agent.git

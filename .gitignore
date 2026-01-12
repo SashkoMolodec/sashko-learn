@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application
+*.log
+logs/
+
+# Books storage (local development)
+books/
+*.pdf
+
+# Docker volumes
+.data/
