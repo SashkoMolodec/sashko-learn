@@ -1,165 +1,66 @@
 # Sashko-Learn
 
-Learning tool for technical programming books using AI-generated quizzes via Telegram bot.
+AI-powered personal learning tool: syncs Obsidian notes, generates quizzes, answers questions via RAG, and analyzes knowledge gaps — all via Telegram bot.
 
-## MVP Features
+> For architecture details and dev commands see [CLAUDE.md](CLAUDE.md).
 
-- Upload PDF books via Telegram
-- Automatic chapter extraction using Apache PDFBox
-- Chapter list display
-- All data stored in Redis (lightweight MVP)
+## Features
+
+- **Notes sync** — indexes Obsidian vault (markdown + images via Claude Vision)
+- **Quiz generation** — AI-generated quizzes from your notes with dedup across sessions
+- **RAG Q&A** — semantic search over notes + AI answer (`/ask`)
+- **Deep analysis** — wikilink suggestions and knowledge gap analysis for active note (`/ai_analyze`)
+- **Read** — summarize any URL or uploaded `.md`/`.txt` file (`/read`)
+- **PDF books** — upload PDF, extract chapters
 
 ## Tech Stack
 
-- **Java 24**, Spring Boot 3.5.7
-- **Redis** - primary storage for MVP
-- **RedPanda Kafka** - inter-service messaging
-- **Apache PDFBox** - PDF parsing
-- **Telegram Bot API**
-- **Docker Compose**
+- **Java 24**, Spring Boot 3.5
+- **Redis** — session and cache
+- **RedPanda Kafka** — async inter-service messaging
+- **PostgreSQL + pgvector** — notes, embeddings, quizzes
+- **Spring AI** — OpenAI (embeddings), Anthropic Claude (vision, chat, analysis)
+- **Apache PDFBox** — PDF parsing
+- **Telegram Bot API** — long polling
 
 ## Architecture
 
-Two microservices:
-- **sl-main-agent** (port 8080) - Telegram bot interface, user interaction
-- **sl-analyze-agent** (port 8081) - PDF processing, chapter extraction
+Two microservices communicating via Kafka request/response pairs:
 
-Communication via Kafka topics:
-- `extract-chapters-tasks` - Main → Analyze
-- `extract-chapters-results` - Analyze → Main
+- **sl-main-agent** (port 8080) — Telegram bot, routes commands, manages session state in Redis
+- **sl-analyze-agent** (port 8081) — all AI/ML work: notes sync, embeddings, RAG, quiz generation, PDF processing
 
 ## Quick Start
 
-### Prerequisites
-
-- Docker and Docker Compose
-- Telegram Bot Token (get from [@BotFather](https://t.me/BotFather))
-
-### Setup
-
-1. **Create `.env` file:**
-
 ```bash
 cp .env.template .env
-```
-
-2. **Edit `.env` with your Telegram bot token:**
-
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
-TELEGRAM_BOT_USERNAME=your_bot_username
-```
-
-3. **Start all services:**
-
-```bash
+# fill in TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY, POSTGRES_PASSWORD
 docker-compose up --build
 ```
 
-This will start:
-- Redis (port 6379)
-- RedPanda Kafka (port 9092)
-- RedPanda Console (http://localhost:9094)
-- sl-main-agent (port 8080)
-- sl-analyze-agent (port 8081)
+## Bot Commands
 
-### Usage
+| Command | Description |
+|---|---|
+| `/sync` | Sync Obsidian notes vault |
+| `/find <query>` | Semantic search over notes |
+| `/ask <question>` | RAG-based Q&A |
+| `/quiz <topic> [-key <note>]` | Generate or load a quiz |
+| `/analyze` | Quick note analysis |
+| `/ai_analyze` | Deep analysis with link suggestions |
+| `/read <url>` | Summarize a URL (or attach `.md`/`.txt`) |
 
-1. Open Telegram and find your bot
-2. Send `/start` to begin
-3. Upload a PDF book
-4. Wait for chapter analysis
-5. View extracted chapters!
-
-## Development
-
-### Run services locally (without Docker)
-
-**Terminal 1 - Start infrastructure:**
-```bash
-docker-compose up redis redpanda -d
-```
-
-**Terminal 2 - Run analyze-agent:**
-```bash
-cd sl-analyze-agent
-./gradlew bootRun
-```
-
-**Terminal 3 - Run main-agent:**
-```bash
-cd sl-main-agent
-export TELEGRAM_BOT_TOKEN=your_token
-./gradlew bootRun
-```
-
-### Check logs
+## Local Development
 
 ```bash
-docker logs sl_main_agent -f
-docker logs sl_analyze_agent -f
+# Start infrastructure only
+docker-compose up redis redpanda postgres -d
+
+# Run each service
+./gradlew -p sl-analyze-agent bootRun
+./gradlew -p sl-main-agent bootRun
 ```
 
-### Monitor Kafka messages
+Logs: `docker logs sl_main_agent -f` / `docker logs sl_analyze_agent -f`
 
-Open RedPanda Console: http://localhost:9094
-- View topics: `extract-chapters-tasks`, `extract-chapters-results`
-- Inspect messages
-
-## Project Structure
-
-```
-sl/
-├── docker-compose.yaml
-├── .env.template
-├── sl-main-agent/
-│   ├── src/main/java/com/sashkolearn/mainagent/
-│   │   ├── api/telegram/          # Telegram bot
-│   │   ├── config/                # Spring configs
-│   │   ├── domain/service/        # Business logic
-│   │   ├── infrastructure/redis/  # Redis integration
-│   │   └── messaging/             # Kafka DTOs, producers, consumers
-│   ├── build.gradle
-│   └── Dockerfile
-└── sl-analyze-agent/
-    ├── src/main/java/com/sashkolearn/analyzeagent/
-    │   ├── domain/service/        # PDF processing logic
-    │   ├── infrastructure/redis/  # Redis integration
-    │   └── messaging/             # Kafka DTOs, producers, consumers
-    ├── build.gradle
-    └── Dockerfile
-```
-
-## Commands
-
-- `/start` - Welcome message
-- `/help` - Show help
-- `/mybooks` - List uploaded books
-- `/quiz` - Start quiz (coming in next phase)
-
-## Future Enhancements
-
-- PostgreSQL integration (after user approves chapters)
-- Google Gemini AI for quiz generation
-- Interactive quiz sessions
-- Progress tracking
-- Spaced repetition algorithm
-
-## Troubleshooting
-
-**Bot doesn't respond:**
-- Check TELEGRAM_BOT_TOKEN in .env
-- Check logs: `docker logs sl_main_agent`
-
-**Chapters not extracted:**
-- Check PDF is valid and not encrypted
-- Check logs: `docker logs sl_analyze_agent`
-- Monitor Kafka in RedPanda Console
-
-**Services not starting:**
-- Ensure ports 6379, 8080, 8081, 9092, 9094 are free
-- Run `docker-compose down -v` and try again
-
-## License
-
-MIT
+Kafka inspector: http://localhost:9094
