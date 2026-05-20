@@ -14,6 +14,9 @@ import java.util.List;
 @Slf4j
 public class EmbeddingService {
 
+    // text-embedding-3-small limit is 8192 tokens; ~4 chars/token → 30k chars is a safe ceiling
+    private static final int MAX_CHARS = 30_000;
+
     private final EmbeddingModel embeddingModel;
 
     /**
@@ -29,6 +32,7 @@ public class EmbeddingService {
         }
 
         try {
+            text = truncate(text);
             log.debug("Generating embedding for text (length: {})", text.length());
 
             EmbeddingResponse response = embeddingModel.embedForResponse(List.of(text));
@@ -45,6 +49,12 @@ public class EmbeddingService {
         }
     }
 
+    private String truncate(String text) {
+        if (text.length() <= MAX_CHARS) return text;
+        log.warn("Truncating text from {} to {} chars before embedding", text.length(), MAX_CHARS);
+        return text.substring(0, MAX_CHARS);
+    }
+
     public List<float[]> generateEmbeddingsBatch(List<String> texts) {
         if (texts == null || texts.isEmpty()) {
             throw new IllegalArgumentException("Texts list cannot be null or empty");
@@ -54,7 +64,8 @@ public class EmbeddingService {
             log.info("Generating embeddings for batch of {} texts", texts.size());
 
             // Batch request to OpenAI API
-            EmbeddingResponse response = embeddingModel.embedForResponse(texts);
+            List<String> truncated = texts.stream().map(this::truncate).toList();
+            EmbeddingResponse response = embeddingModel.embedForResponse(truncated);
 
             return response.getResults().stream()
                 .map(Embedding::getOutput)

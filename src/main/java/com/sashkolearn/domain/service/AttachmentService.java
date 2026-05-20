@@ -70,12 +70,17 @@ public class AttachmentService {
                         continue;
                     }
 
-                    // Claude API call — outside transaction
+                    // Claude API call — outside transaction; returns null if image is too large
                     String description = claudeVisionService.describeImage(imagePath, note.getContent());
+
+                    if (description == null) {
+                        skipped++;
+                        continue;
+                    }
 
                     // OpenAI API call — outside transaction
                     float[] embedding = null;
-                    if (description != null && !description.isEmpty()) {
+                    if (!description.isEmpty()) {
                         embedding = embeddingService.generateEmbedding(description);
                     }
 

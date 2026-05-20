@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run
 
-Single Gradle/Spring Boot 3.5 module on **Java 24**, located in `sl/`:
+Single Gradle/Spring Boot 3.5 module on **Java 24**, located in `sl/sl/`:
 
 ```bash
 # Build / test
-./sl/gradlew -p sl build
-./sl/gradlew -p sl test --tests "com.sashkolearn.SomeTest.someMethod"
+./sl/sl/gradlew -p sl/sl build
+./sl/sl/gradlew -p sl/sl test --tests "com.sashkolearn.SomeTest.someMethod"
 
 # Run locally (needs redis + postgres up — see below)
-./sl/gradlew -p sl bootRun
+./sl/sl/gradlew -p sl/sl bootRun
 ```
 
 Full stack via Docker (requires `.env` from `.env.template` plus `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `POSTGRES_PASSWORD`, `TELEGRAM_BOT_TOKEN`, optionally `OBSIDIAN_API_TOKEN`):

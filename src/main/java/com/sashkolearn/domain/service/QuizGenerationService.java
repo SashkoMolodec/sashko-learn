@@ -200,7 +200,7 @@ public class QuizGenerationService {
         return chatClient.prompt()
                 .system(system)
                 .user(user)
-                .options(chatOptions(standardModel, 8000))
+                .options(chatOptions(standardModel, 32000))
                 .call()
                 .entity(QuizResponse.class);
     }

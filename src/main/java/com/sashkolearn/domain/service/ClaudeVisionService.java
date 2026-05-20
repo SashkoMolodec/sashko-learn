@@ -10,12 +10,16 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ClaudeVisionService {
+
+    // Anthropic API base64 image limit is 5 MB; stay well under to avoid Jackson string-length errors too
+    private static final long MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
     private final AnthropicChatModel anthropicChatModel;
 
@@ -44,6 +48,13 @@ public class ClaudeVisionService {
         log.debug("Describing image: {}", imagePath);
 
         try {
+            long fileSize = Files.size(imagePath);
+            if (fileSize > MAX_IMAGE_BYTES) {
+                log.warn("Skipping image {} ({} bytes) — exceeds {} byte limit for vision API",
+                        imagePath.getFileName(), fileSize, MAX_IMAGE_BYTES);
+                return null;
+            }
+
             var imageResource = new FileSystemResource(imagePath);
             var mimeType = getMimeType(imagePath);
             var media = new Media(mimeType, imageResource);

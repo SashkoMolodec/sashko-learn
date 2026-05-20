@@ -32,7 +32,7 @@ Single Spring Boot app on port 8080. Telegram updates are dispatched to command 
 ```bash
 cp .env.template .env
 # fill in TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY, POSTGRES_PASSWORD
-docker-compose up --build
+podman-compose up postgres redis
 ```
 
 ## Bot Commands
