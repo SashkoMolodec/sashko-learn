@@ -14,50 +14,6 @@ services:
     networks:
       - sl-network
 
-  redpanda:
-    image: redpandadata/redpanda:latest
-    container_name: sl_redpanda
-    ports:
-      - "9092:9092"
-      - "9644:9644"
-    command:
-      - redpanda
-      - start
-      - --smp 1
-      - --memory 1G
-      - --mode dev-container
-      - --default-log-level info
-      - --kafka-addr
-      - internal://0.0.0.0:9091
-      - --kafka-addr
-      - external://0.0.0.0:9092
-      - --advertise-kafka-addr
-      - internal://redpanda:9091
-      - --advertise-kafka-addr
-      - external://localhost:9092
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep 'Healthy:.*true' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - sl-network
-
-  redpanda-console:
-    image: redpandadata/console:latest
-    container_name: sl_redpanda_console
-    depends_on:
-      redpanda:
-        condition: service_healthy
-    ports:
-      - "9094:8080"
-    environment:
-      - KAFKA_BROKERS=redpanda:9091
-    restart: unless-stopped
-    networks:
-      - sl-network
-
   postgres:
     image: pgvector/pgvector:pg17
     container_name: sl_postgres
@@ -78,40 +34,14 @@ services:
     networks:
       - sl-network
 
-  sl-main-agent:
+  sl:
     build:
-      context: ./sl-main-agent
+      context: ./sl
       dockerfile: Dockerfile
-    container_name: sl_main_agent
+    container_name: sl
     ports:
       - "8080:8080"
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9091
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
-      - FILE_STORAGE_PATH=/var/sashko-learn/books
-    volumes:
-      - sl_books:/var/sashko-learn/books
-    depends_on:
-      redis:
-        condition: service_healthy
-      redpanda:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - sl-network
-
-  sl-analyze-agent:
-    build:
-      context: ./sl-analyze-agent
-      dockerfile: Dockerfile
-    container_name: sl_analyze_agent
-    ports:
-      - "8081:8081"
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9091
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
@@ -119,14 +49,20 @@ services:
       - POSTGRES_DB=sashkolearn
       - POSTGRES_USER=sluser
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      - FILE_STORAGE_PATH=/var/sashko-learn/books
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OBSIDIAN_API_URL=${OBSIDIAN_API_URL:-https://host.docker.internal:27124}
+      - OBSIDIAN_API_TOKEN=${OBSIDIAN_API_TOKEN}
     volumes:
-      - sl_books:/var/sashko-learn/books:ro
+      - sl_books:/var/sashko-learn/books
       - /Users/okravch/my/sl/notes:/var/sashko-learn/notes:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
-        condition: service_healthy
-      redpanda:
         condition: service_healthy
       postgres:
         condition: service_healthy

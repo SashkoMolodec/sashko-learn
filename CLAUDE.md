@@ -4,69 +4,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run
 
-Two independent Gradle/Spring Boot 3.5 services on **Java 24**. Each has its own wrapper — always `cd` into the service dir or use `-p`:
+Single Gradle/Spring Boot 3.5 module on **Java 24**, located in `sl/`:
 
 ```bash
-# Build / test a single service
-./gradlew -p sl-main-agent build
-./gradlew -p sl-analyze-agent build
+# Build / test
+./sl/gradlew -p sl build
+./sl/gradlew -p sl test --tests "com.sashkolearn.SomeTest.someMethod"
 
-# Single test
-./gradlew -p sl-analyze-agent test --tests "com.sashkolearn.analyzeagent.SomeTest.someMethod"
-
-# Run locally (needs redis + redpanda + postgres up — see below)
-./gradlew -p sl-main-agent bootRun
-./gradlew -p sl-analyze-agent bootRun
+# Run locally (needs redis + postgres up — see below)
+./sl/gradlew -p sl bootRun
 ```
 
-Full stack via Docker (requires `.env` from `.env.template` plus `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `POSTGRES_PASSWORD`, optionally `OBSIDIAN_API_TOKEN`):
+Full stack via Docker (requires `.env` from `.env.template` plus `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `POSTGRES_PASSWORD`, `TELEGRAM_BOT_TOKEN`, optionally `OBSIDIAN_API_TOKEN`):
 
 ```bash
-docker-compose up --build                       # everything
-docker-compose up redis redpanda postgres -d    # infra only for local bootRun
-docker logs sl_main_agent -f                    # logs
+docker-compose up --build                # everything (sl + redis + postgres)
+docker-compose up redis postgres -d      # infra only for local bootRun
+docker logs sl -f                        # logs
 ```
-
-RedPanda Console (Kafka inspector): http://localhost:9094 — useful when debugging message flow.
 
 ## Architecture
 
-Two-service request/response system glued together by Kafka. The README still describes the original PDF-chapter MVP, but the codebase has grown well past it; treat the README as out of date for scope.
+Single Spring Boot app (`sl`, port 8080). Telegram updates are translated into command handlers; long-running work (sync, RAG, quiz generation, deep analysis, PDF chapter extraction) is offloaded to a `TaskExecutor` (`aiExecutor`, configured in `AsyncConfig`) so the bot responds with a synchronous ack within milliseconds while heavy work runs in the background and posts results back to Telegram from the worker thread.
 
-### Services
+### Layering
 
-- **sl-main-agent** (port 8080) — Telegram bot front end. Holds no domain knowledge; it translates Telegram updates into Kafka task messages, awaits result messages, and writes user/session state to Redis.
-- **sl-analyze-agent** (port 8081) — All heavy lifting: PDF parsing (PDFBox), Obsidian notes sync, embedding + RAG (pgvector), quiz generation, AI image/note analysis (Spring AI: OpenAI for embeddings, Anthropic Claude for vision/chat). Owns Postgres.
+```
+com.sashkolearn
+├── SlApplication                  # @SpringBootApplication + @EnableAsync
+├── api/telegram/                  # TelegramChatBot (long-polling consumer), DTOs
+├── config/                        # AsyncConfig, RedisConfig, NotesConfig,
+│                                  # TelegramConfig, TelegramCommandsConfig, FileStorageConfig
+├── domain/
+│   ├── command/                   # CommandRouter + 7 CommandHandlers
+│   ├── service/                   # orchestrators + business services
+│   │   └── ai/PromptLoader
+│   ├── entity/                    # JPA entities (notes, links, attachments, quizzes, quiz_questions, ai_notes)
+│   ├── repository/                # Spring Data JPA repositories
+│   └── model/                     # FullSyncResult, ChapterInfo, QuizQuestionView
+├── infrastructure/redis/          # RedisService (session + dedup + claim-check)
+└── util/VectorUtils
+```
 
-### Kafka request/response convention
+### Async pattern (replaces Kafka)
 
-For every capability there is a paired `*_task` (main → analyze) and `*_result` (analyze → main) topic. Each side has a mirrored `messaging/producer` + `messaging/consumer` package with parallel DTO classes. Type routing is done via Spring Kafka **JSON type mappings** in each service's `application.properties` — both sides must list the same logical key (e.g. `extract_chapters_task`) mapped to their own DTO class. **When adding a new task type, you must update the type-mapping strings in both `sl-main-agent/.../application.properties` and `sl-analyze-agent/.../application.properties`**, or messages will fail to deserialize.
+Each command handler returns a short ack string synchronously, then submits the actual work via `aiExecutor.execute(() -> { ... })`. Inside the lambda the handler calls services directly and uses an `@Lazy`-injected `TelegramChatBot` to push results / errors. Bot is `@Lazy` to break the circular dependency `TelegramChatBot → UserInteractionOrchestrator → CommandRouter → handlers → TelegramChatBot`.
 
-Currently wired flows (task/result pairs): `extract_chapters`, `sync_notes`, `ask_question`, `analyze_note`, `find_notes`, `analyze_ai`, `quiz_generate`, `quiz_search`, `quiz_get`, `read`. Consumers use `max.poll.records=1` and a 30-min `max.poll.interval.ms` because analysis work is slow.
+`aiExecutor` is sized via `sl.async.core-pool-size` / `max-pool-size` / `queue-capacity` in `application.properties`.
 
 ### State
 
-- **Redis** — Telegram session/conversation state and short-lived caches in both services (`infrastructure/redis/RedisService`).
-- **Postgres + pgvector** — analyze-agent only; managed by **Flyway** migrations in `sl-analyze-agent/src/main/resources/db/migration/`. Hibernate runs in `validate` mode, so schema changes go through a new `V*.sql` migration, not entity-driven DDL. Entities live in `domain/entity/` (notes, links, attachments, quizzes, quiz_questions, ai_notes). Embedding columns are updated via native queries (see `EmbeddingService`, `VectorUtils`).
+- **Redis** — Telegram session/conversation state, dedup of incoming `update_id`s (`setIfAbsent`), short-lived caches.
+- **Postgres + pgvector** — managed by **Flyway** migrations in `sl/src/main/resources/db/migration/`. Hibernate runs in `validate` mode, so schema changes go through a new `V*.sql` migration, not entity-driven DDL. Embedding columns are updated via native queries (see `EmbeddingService`, `VectorUtils`).
 
-### Layering inside each service
+### Orchestrators worth knowing
 
-`api/` (main-agent only — Telegram bot) → `domain/service/` (orchestrators + business logic) → `messaging/` (Kafka producers/consumers + DTOs) → `infrastructure/` (Redis) + `domain/repository/` (Spring Data JPA, analyze-agent only).
-
-Notable orchestrators worth knowing before changing flows:
-- `mainagent.domain.service.UserInteractionOrchestrator` — top-level Telegram update router.
-- `mainagent.domain.service.{BookUploadFlowService,QuizFlowService,SessionManagementService}` — per-feature state machines.
-- `analyzeagent.domain.service.NoteSyncOrchestrator` — coordinates `NoteSyncService`, `ObsidianApiService`, `LinkService`, `AttachmentService`, `EmbeddingService` for the notes pipeline.
+- `UserInteractionOrchestrator` — top-level router for text messages, callbacks, polls, file uploads. Delegates commands to `CommandRouter`, quiz callbacks (`quiz:select:<id>` / `quiz:new`) directly to `QuizCommandHandler.submitFetchAndStart` / `submitGenerateAndStart`, and `/read` document uploads to `ReadCommandHandler.submitFileRead`.
+- `BookUploadFlowService` — handles PDF uploads: downloads from Telegram, stores metadata in Redis, submits chapter extraction to `aiExecutor`.
+- `NoteSyncOrchestrator` — coordinates `NoteSyncService`, `ObsidianApiService`, `LinkService`, `AttachmentService`, `EmbeddingService` for the Obsidian notes pipeline.
+- `QuizFlowService` — poll-based quiz UI (sending `SendPoll`, mapping poll IDs to questions, advancing on answers).
 
 ### External integrations
 
 - **Telegram** via `telegrambots-springboot-longpolling-starter` (long polling, no webhook).
-- **Spring AI**: OpenAI `text-embedding-3-small` (1536 dims) for embeddings; Anthropic `claude-sonnet-4-6` for vision/chat. Configured in `sl-analyze-agent/application.properties`.
-- **Obsidian Local REST API** at `https://127.0.0.1:27124` — analyze-agent reads notes from the host's Obsidian vault. Path is also bind-mounted read-only at `/var/sashko-learn/notes` (see `docker-compose.yaml`); the host path `/Users/okravch/my/sl/notes` is hardcoded there.
-- **File storage** — uploaded PDFs land in the `sl_books` volume (`/var/sashko-learn/books`), written by main-agent and read by analyze-agent.
+- **Spring AI**: OpenAI `text-embedding-3-small` (1536 dims) for embeddings; Anthropic Claude family for chat/vision. Model aliases live in `application.properties` as `ai.model.fast` (Haiku 4.5), `ai.model.standard` (Sonnet 4.6), `ai.model.deep` (Opus 4.7) — change there, not in code.
+- **Obsidian Local REST API** at `https://127.0.0.1:27124` (or `host.docker.internal` from Docker) — reads notes from host's Obsidian vault. Path is bind-mounted read-only at `/var/sashko-learn/notes` (see `docker-compose.yaml`); host path `/Users/okravch/my/sl/notes` is hardcoded.
+- **File storage** — uploaded PDFs land in the `sl_books` volume (`/var/sashko-learn/books`).
 
 ## Conventions
 
-- DTO classes on the two sides of a Kafka topic are **deliberately duplicated** (one per service package). Don't try to extract them into a shared module — the JSON type-mapping config relies on package-qualified class names per service.
 - Lombok is used throughout; annotation processing must be enabled in the IDE.
 - Hibernate is in `validate` mode — adding/altering tables means a new Flyway migration file.
+- Command handlers inject `@Lazy TelegramChatBot` to avoid the circular dependency on bot — the constructor uses manual `@Qualifier`/`@Lazy` (no `@RequiredArgsConstructor` on those).
+- New long-running flow? Submit it via `aiExecutor`, not synchronously on the Telegram thread. Telegram acks must come back in milliseconds or the user sees a hung command.

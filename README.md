@@ -7,7 +7,7 @@ AI-powered personal learning tool: syncs Obsidian notes, generates quizzes, answ
 ## Features
 
 - **Notes sync** — indexes Obsidian vault (markdown + images via Claude Vision)
-- **Quiz generation** — AI-generated quizzes from your notes with dedup across sessions
+- **Quiz generation** — Haiku draft + Sonnet critique pipeline with prompt caching
 - **RAG Q&A** — semantic search over notes + AI answer (`/ask`)
 - **Deep analysis** — wikilink suggestions and knowledge gap analysis for active note (`/ai_analyze`)
 - **Read** — summarize any URL or uploaded `.md`/`.txt` file (`/read`)
@@ -15,20 +15,17 @@ AI-powered personal learning tool: syncs Obsidian notes, generates quizzes, answ
 
 ## Tech Stack
 
-- **Java 24**, Spring Boot 3.5
-- **Redis** — session and cache
-- **RedPanda Kafka** — async inter-service messaging
+- **Java 24**, Spring Boot 3.5 (single module)
+- **Redis** — session, dedup, claim-check cache
 - **PostgreSQL + pgvector** — notes, embeddings, quizzes
 - **Spring AI** — OpenAI (embeddings), Anthropic Claude (vision, chat, analysis)
 - **Apache PDFBox** — PDF parsing
 - **Telegram Bot API** — long polling
+- **TaskExecutor** — async background work (no Kafka)
 
 ## Architecture
 
-Two microservices communicating via Kafka request/response pairs:
-
-- **sl-main-agent** (port 8080) — Telegram bot, routes commands, manages session state in Redis
-- **sl-analyze-agent** (port 8081) — all AI/ML work: notes sync, embeddings, RAG, quiz generation, PDF processing
+Single Spring Boot app on port 8080. Telegram updates are dispatched to command handlers which kick off long-running work on a shared `TaskExecutor` and post results back via the bot. See [CLAUDE.md](CLAUDE.md) for layering and orchestrators.
 
 ## Quick Start
 
@@ -54,13 +51,10 @@ docker-compose up --build
 
 ```bash
 # Start infrastructure only
-docker-compose up redis redpanda postgres -d
+docker-compose up redis postgres -d
 
-# Run each service
-./gradlew -p sl-analyze-agent bootRun
-./gradlew -p sl-main-agent bootRun
+# Run the app
+./sl/gradlew -p sl bootRun
 ```
 
-Logs: `docker logs sl_main_agent -f` / `docker logs sl_analyze_agent -f`
-
-Kafka inspector: http://localhost:9094
+Logs: `docker logs sl -f`
