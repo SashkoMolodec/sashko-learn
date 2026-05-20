@@ -41,6 +41,7 @@ public class SyncCommandHandler implements CommandHandler {
         try {
             FullSyncResult result = orchestrator.performFullSync(progress -> {
                 log.debug("sync progress for {}: {}", chatId, progress);
+                bot.sendMessage(chatId, progress);
             });
             bot.sendMessage(chatId, formatSyncResult(result));
         } catch (Exception e) {

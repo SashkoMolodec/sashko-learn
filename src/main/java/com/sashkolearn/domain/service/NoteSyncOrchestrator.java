@@ -45,16 +45,22 @@ public class NoteSyncOrchestrator {
                     attachmentResult.processed(), attachmentResult.skipped(), attachmentResult.errors())
             );
 
-            progressCallback.accept("🤖 3/4 генеруємо вектори...");
-            int embeddingsGenerated = noteSyncService.generateMissingEmbeddings();
+            progressCallback.accept("💬 3/5 інжектимо описи картинок у нотатки...");
+            int injected = attachmentService.reinjectAllDescriptions();
             progressCallback.accept(
-                String.format("🤖 3/4 згенеровано %d векторів", embeddingsGenerated)
+                String.format("💬 3/5 описи вставлені у %d картинок", injected)
             );
 
-            progressCallback.accept("🔗 4/4 будуємо wikilink граф...");
+            progressCallback.accept("🤖 4/5 генеруємо вектори...");
+            int embeddingsGenerated = noteSyncService.generateMissingEmbeddings();
+            progressCallback.accept(
+                String.format("🤖 4/5 згенеровано %d векторів", embeddingsGenerated)
+            );
+
+            progressCallback.accept("🔗 5/5 будуємо wikilink граф...");
             LinkService.LinkBuildResult linkResult = linkService.buildLinksForChangedNotes(syncResult.changedNoteIds());
             progressCallback.accept(
-                String.format("🔗 4/4 оновлені лінки для %d нотаток (%d лінків, %d поламані)",
+                String.format("🔗 5/5 оновлені лінки для %d нотаток (%d лінків, %d поламані)",
                     syncResult.changedNoteIds().size(), linkResult.totalLinks(), linkResult.brokenLinks())
             );
 

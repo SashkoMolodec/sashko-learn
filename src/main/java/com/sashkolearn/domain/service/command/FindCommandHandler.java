@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Component;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
 import java.util.List;
 
@@ -58,17 +59,20 @@ public class FindCommandHandler implements CommandHandler {
         try {
             float[] embedding = embeddingService.generateEmbedding(query);
             List<Note> similar = noteRepository.findSimilarNotes(VectorUtils.toVectorString(embedding), TOP_RESULTS);
-            List<String> names = similar.stream().map(Note::getFileName).toList();
 
-            StringBuilder sb = new StringBuilder("*😎 шос найшов*\n");
-            if (names.isEmpty()) {
-                sb.append("Нічого не знайдено. Спробуй /sync спочатку.");
-            } else {
-                for (int i = 0; i < names.size(); i++) {
-                    sb.append(i + 1).append(". ").append(names.get(i)).append("\n");
-                }
+            if (similar.isEmpty()) {
+                bot.sendMessage(chatId, "😕 Нічого не знайдено. Спробуй /sync спочатку.");
+                return;
             }
-            bot.sendMessage(chatId, sb.toString());
+
+            List<List<InlineKeyboardButton>> rows = similar.stream()
+                    .map(note -> List.of(InlineKeyboardButton.builder()
+                            .text(note.getFileName())
+                            .callbackData("find:open:" + note.getId())
+                            .build()))
+                    .toList();
+
+            bot.sendMessageWithKeyboard(chatId, "😎 знайшов:", rows);
         } catch (Exception e) {
             log.error("Failed to find notes for chat {}", chatId, e);
             bot.sendMessage(chatId, "❌ Failed to find notes: " + e.getMessage());

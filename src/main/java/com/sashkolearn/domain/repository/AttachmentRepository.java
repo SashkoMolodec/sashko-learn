@@ -8,12 +8,15 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface AttachmentRepository extends JpaRepository<Attachment, String> {
 
     boolean existsByFileName(String fileName);
+
+    Optional<Attachment> findByFileName(String fileName);
 
     List<Attachment> findByNoteId(UUID noteId);
 

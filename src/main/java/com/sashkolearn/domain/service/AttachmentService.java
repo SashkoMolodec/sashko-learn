@@ -13,11 +13,14 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -57,8 +60,11 @@ public class AttachmentService {
 
             for (String imageFileName : imageRefs) {
                 try {
-                    if (attachmentRepository.existsByFileName(imageFileName)) {
-                        log.debug("Image already processed, skipping: {}", imageFileName);
+                    var existing = attachmentRepository.findByFileName(imageFileName);
+                    if (existing.isPresent()) {
+                        if (existing.get().getDescription() != null) {
+                            injectDescriptionIntoNote(note, imageFileName, existing.get().getDescription());
+                        }
                         skipped++;
                         continue;
                     }
@@ -86,6 +92,7 @@ public class AttachmentService {
 
                     // DB writes in own transaction
                     self.saveAttachment(imageFileName, noteId, imagePath, description, embedding);
+                    injectDescriptionIntoNote(note, imageFileName, description);
 
                     processed++;
                     log.info("Processed image: {}", imageFileName);
@@ -115,6 +122,43 @@ public class AttachmentService {
         if (embedding != null) {
             String embeddingStr = VectorUtils.toVectorString(embedding);
             attachmentRepository.updateEmbedding(imageFileName, embeddingStr);
+        }
+    }
+
+    public int reinjectAllDescriptions() {
+        List<Attachment> all = attachmentRepository.findAll();
+        int injected = 0;
+        for (Attachment att : all) {
+            if (att.getDescription() == null || att.getDescription().isBlank()) continue;
+            var noteOpt = noteRepository.findById(att.getNoteId());
+            if (noteOpt.isEmpty()) continue;
+            injectDescriptionIntoNote(noteOpt.get(), att.getFileName(), att.getDescription());
+            injected++;
+        }
+        return injected;
+    }
+
+    private void injectDescriptionIntoNote(Note note, String imageFileName, String description) {
+        Path notePath = Paths.get(note.getFilePath());
+        try {
+            String content = Files.readString(notePath);
+            String marker = "<!-- ai-img: " + imageFileName;
+            if (content.contains(marker)) {
+                return;
+            }
+            String escaped = Pattern.quote(imageFileName);
+            Pattern pattern = Pattern.compile("!\\[\\[" + escaped + "(?:\\|[^\\]]*)?\\]\\]");
+            Matcher matcher = pattern.matcher(content);
+            if (!matcher.find()) {
+                log.warn("Image reference not found for injection: {} in {}", imageFileName, note.getFileName());
+                return;
+            }
+            String comment = "\n<!-- ai-img: " + imageFileName + "\n" + description + "\n-->";
+            String newContent = content.substring(0, matcher.end()) + comment + content.substring(matcher.end());
+            Files.writeString(notePath, newContent);
+            log.info("Injected description for {} into {}", imageFileName, note.getFileName());
+        } catch (IOException e) {
+            log.error("Failed to inject description for {} into {}: {}", imageFileName, note.getFileName(), e.getMessage());
         }
     }
 

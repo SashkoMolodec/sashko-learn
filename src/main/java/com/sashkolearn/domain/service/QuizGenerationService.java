@@ -39,9 +39,6 @@ public class QuizGenerationService {
     private final ChatClient chatClient;
     private final PromptLoader prompts;
 
-    @Value("${ai.model.fast}")
-    private String fastModel;
-
     @Value("${ai.model.standard}")
     private String standardModel;
 
@@ -87,17 +84,8 @@ public class QuizGenerationService {
 
         String notesContext = buildNotesContext(relevantNotes);
 
-        // 1. Topic analysis — Haiku (cheap, structured output)
-        String topicAnalysis = callTopicAnalysis(topic, notesContext);
-        log.info("Got topic analysis for: {} ({} chars)", topic, topicAnalysis.length());
-
-        // 2. Initial draft — Haiku (cheap output for first pass)
-        QuizResponse draft = callDraftGeneration(topic, notesContext, topicAnalysis);
-        log.info("Got draft quiz with {} questions", draft.questions().size());
-
-        // 3. Critique + refine — Sonnet (senior editor on the draft)
-        QuizResponse finalQuiz = callCritiqueAndRefine(topic, notesContext, topicAnalysis, draft);
-        log.info("Got final quiz with {} questions", finalQuiz.questions().size());
+        QuizResponse finalQuiz = callGenerate(topic, notesContext);
+        log.info("Got quiz with {} questions", finalQuiz.questions().size());
 
         Quiz quiz = Quiz.builder()
                 .topic(topic)
@@ -159,66 +147,16 @@ public class QuizGenerationService {
                 .toList();
     }
 
-    private String callTopicAnalysis(String topic, String notesContext) {
-        String system = prompts.render("quiz/system-topic-analyst.md", Map.of("notes", notesContext));
-        String user = prompts.render("quiz/user-topic-analysis.md", Map.of("topic", topic));
+    private QuizResponse callGenerate(String topic, String notesContext) {
+        String system = prompts.render("quiz/system.md", Map.of("notes", notesContext));
+        String user = prompts.render("quiz/user.md", Map.of("topic", topic));
 
         return chatClient.prompt()
                 .system(system)
                 .user(user)
-                .options(chatOptions(fastModel, 3000))
-                .call()
-                .content();
-    }
-
-    private QuizResponse callDraftGeneration(String topic, String notesContext, String topicAnalysis) {
-        String system = prompts.render("quiz/system-generator.md", Map.of("notes", notesContext));
-        String user = prompts.render("quiz/user-quiz-generation.md", Map.of(
-                "topic", topic,
-                "topicAnalysis", topicAnalysis
-        ));
-
-        return chatClient.prompt()
-                .system(system)
-                .user(user)
-                .options(chatOptions(fastModel, 16000))
+                .options(chatOptions(standardModel, 16000))
                 .call()
                 .entity(QuizResponse.class);
-    }
-
-    private QuizResponse callCritiqueAndRefine(String topic, String notesContext, String topicAnalysis,
-                                                QuizResponse draft) {
-        String draftJson = serializeDraft(draft);
-
-        String system = prompts.render("quiz/system-critic.md", Map.of("notes", notesContext));
-        String user = prompts.render("quiz/user-critique.md", Map.of(
-                "topic", topic,
-                "topicAnalysis", topicAnalysis,
-                "initialQuizJson", draftJson
-        ));
-
-        return chatClient.prompt()
-                .system(system)
-                .user(user)
-                .options(chatOptions(standardModel, 32000))
-                .call()
-                .entity(QuizResponse.class);
-    }
-
-    private String serializeDraft(QuizResponse draft) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Опис: ").append(draft.description()).append("\n\n");
-        int i = 1;
-        for (QuestionData q : draft.questions()) {
-            sb.append(i++).append(". ").append(q.question()).append("\n");
-            sb.append("   A) ").append(q.optionA()).append("\n");
-            sb.append("   B) ").append(q.optionB()).append("\n");
-            sb.append("   C) ").append(q.optionC()).append("\n");
-            sb.append("   D) ").append(q.optionD()).append("\n");
-            sb.append("   Правильна: ").append(q.correct()).append("\n");
-            sb.append("   Пояснення: ").append(q.explanation()).append("\n\n");
-        }
-        return sb.toString();
     }
 
     private AnthropicChatOptions chatOptions(String model, int maxTokens) {
