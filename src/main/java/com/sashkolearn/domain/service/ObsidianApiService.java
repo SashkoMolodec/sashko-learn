@@ -122,11 +122,12 @@ public class ObsidianApiService {
 
     /** Reads the raw markdown content of a vault-relative path (e.g. {@code topics/foo.md}). */
     public String readNote(String vaultPath) {
-        return restClient.get()
+        String content = restClient.get()
                 .uri(vaultUri(vaultPath, false))
                 .accept(MediaType.TEXT_MARKDOWN, MediaType.TEXT_PLAIN, MediaType.ALL)
                 .retrieve()
                 .body(String.class);
+        return content != null ? content : "";
     }
 
     /** Reads a binary file (e.g. an image attachment) by its vault-relative path. */
