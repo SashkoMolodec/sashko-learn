@@ -14,9 +14,9 @@ import java.util.List;
 @Slf4j
 public class EmbeddingService {
 
-    // text-embedding-3-small limit is 8192 tokens; Ukrainian text averages ~2-3 chars/token
-    // → 20 000 chars is a safe ceiling that fits within the token budget
-    private static final int MAX_CHARS = 20_000;
+    // text-embedding-3-small limit is 8192 tokens; Cyrillic averages ~1.5 chars/token
+    // → 10 000 chars ≈ 6 500 tokens, well within the 8 192 limit for any content
+    private static final int MAX_CHARS = 10_000;
 
     private final EmbeddingModel embeddingModel;
 

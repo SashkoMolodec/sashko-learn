@@ -111,7 +111,14 @@ public class NoteSyncService {
             );
 
             try {
-                List<String> texts = batch.stream().map(this::getEnrichedContent).toList();
+                List<String> texts = batch.stream().map(note -> {
+                    String enriched = getEnrichedContent(note);
+                    if (enriched.length() > 10_000) {
+                        log.warn("Note '{}' is large ({} chars) — will be truncated before embedding",
+                                note.getFileName(), enriched.length());
+                    }
+                    return enriched;
+                }).toList();
                 // OpenAI API call — outside transaction
                 List<float[]> embeddings = embeddingService.generateEmbeddingsBatch(texts);
 
