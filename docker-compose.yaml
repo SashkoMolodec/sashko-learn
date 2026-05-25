@@ -38,7 +38,7 @@ services:
 
   sl:
     build:
-      context: ./sl
+      context: .
       dockerfile: Dockerfile
     container_name: sl
     ports:
