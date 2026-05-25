@@ -12,11 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientResponseException;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -33,6 +30,7 @@ public class AttachmentService {
     private final ImageReferenceParserService imageParser;
     private final ClaudeVisionService claudeVisionService;
     private final EmbeddingService embeddingService;
+    private final ObsidianApiService obsidianApiService;
 
     @Lazy
     @Autowired
@@ -41,8 +39,7 @@ public class AttachmentService {
     public AttachmentResult processAttachmentsForNotes(List<UUID> changedNoteIds) {
         log.info("Processing attachments for {} notes", changedNoteIds.size());
 
-        Path notesPath = Paths.get(notesConfig.getPath());
-        Path imgPath = notesPath.getParent().resolve("img");
+        String imgFolder = notesConfig.getImgFolder();
 
         int processed = 0;
         int skipped = 0;
@@ -69,15 +66,18 @@ public class AttachmentService {
                         continue;
                     }
 
-                    Path imagePath = imgPath.resolve(imageFileName);
-                    if (!Files.exists(imagePath)) {
-                        log.warn("Image not found: {}", imagePath);
+                    String imageVaultPath = imgFolder + "/" + imageFileName;
+                    byte[] imageBytes;
+                    try {
+                        imageBytes = obsidianApiService.readBinary(imageVaultPath);
+                    } catch (RestClientResponseException e) {
+                        log.warn("Image not found in vault: {} ({})", imageVaultPath, e.getStatusCode());
                         errors++;
                         continue;
                     }
 
                     // Claude API call — outside transaction; returns null if image is too large
-                    String description = claudeVisionService.describeImage(imagePath, note.getContent());
+                    String description = claudeVisionService.describeImage(imageBytes, imageFileName, note.getContent());
 
                     if (description == null) {
                         skipped++;
@@ -91,7 +91,7 @@ public class AttachmentService {
                     }
 
                     // DB writes in own transaction
-                    self.saveAttachment(imageFileName, noteId, imagePath, description, embedding);
+                    self.saveAttachment(imageFileName, noteId, imageVaultPath, description, embedding);
                     injectDescriptionIntoNote(note, imageFileName, description);
 
                     processed++;
@@ -110,11 +110,11 @@ public class AttachmentService {
     }
 
     @Transactional
-    public void saveAttachment(String imageFileName, UUID noteId, Path imagePath, String description, float[] embedding) {
+    public void saveAttachment(String imageFileName, UUID noteId, String imageVaultPath, String description, float[] embedding) {
         Attachment attachment = Attachment.builder()
                 .fileName(imageFileName)
                 .noteId(noteId)
-                .filePath(imagePath.toString())
+                .filePath(imageVaultPath)
                 .description(description)
                 .build();
         attachmentRepository.save(attachment);
@@ -139,9 +139,9 @@ public class AttachmentService {
     }
 
     private void injectDescriptionIntoNote(Note note, String imageFileName, String description) {
-        Path notePath = Paths.get(note.getFilePath());
+        String vaultPath = note.getFilePath();
         try {
-            String content = Files.readString(notePath);
+            String content = obsidianApiService.readNote(vaultPath);
             String marker = "<!-- ai-img: " + imageFileName;
             if (content.contains(marker)) {
                 return;
@@ -155,9 +155,9 @@ public class AttachmentService {
             }
             String comment = "\n<!-- ai-img: " + imageFileName + "\n" + description + "\n-->";
             String newContent = content.substring(0, matcher.end()) + comment + content.substring(matcher.end());
-            Files.writeString(notePath, newContent);
+            obsidianApiService.writeNote(vaultPath, newContent);
             log.info("Injected description for {} into {}", imageFileName, note.getFileName());
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to inject description for {} into {}: {}", imageFileName, note.getFileName(), e.getMessage());
         }
     }

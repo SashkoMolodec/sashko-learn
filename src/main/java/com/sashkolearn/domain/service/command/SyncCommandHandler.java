@@ -3,6 +3,7 @@ package com.sashkolearn.domain.service.command;
 import com.sashkolearn.api.telegram.TelegramChatBot;
 import com.sashkolearn.domain.model.FullSyncResult;
 import com.sashkolearn.domain.service.NoteSyncOrchestrator;
+import com.sashkolearn.domain.service.ObsidianApiService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
@@ -13,15 +14,21 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class SyncCommandHandler implements CommandHandler {
 
+    private static final String NOTES_OFFLINE_MSG =
+            "🔌 Пристрій з нотатками зараз офлайн. Увімкни ноут (і Obsidian), потім спробуй ще раз.";
+
     private final TaskExecutor aiExecutor;
     private final NoteSyncOrchestrator orchestrator;
+    private final ObsidianApiService obsidianApiService;
     private final TelegramChatBot bot;
 
     public SyncCommandHandler(@Qualifier("aiExecutor") TaskExecutor aiExecutor,
                               NoteSyncOrchestrator orchestrator,
+                              ObsidianApiService obsidianApiService,
                               @Lazy TelegramChatBot bot) {
         this.aiExecutor = aiExecutor;
         this.orchestrator = orchestrator;
+        this.obsidianApiService = obsidianApiService;
         this.bot = bot;
     }
 
@@ -38,6 +45,10 @@ public class SyncCommandHandler implements CommandHandler {
     }
 
     private void runSync(Long chatId) {
+        if (!obsidianApiService.isReachable()) {
+            bot.sendMessage(chatId, NOTES_OFFLINE_MSG);
+            return;
+        }
         try {
             FullSyncResult result = orchestrator.performFullSync(progress -> {
                 log.debug("sync progress for {}: {}", chatId, progress);

@@ -6,6 +6,7 @@ import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
@@ -75,8 +76,54 @@ public class ClaudeVisionService {
         }
     }
 
+    /**
+     * Analyzes an in-memory image (fetched over the Obsidian REST API) using Claude Vision.
+     *
+     * @param imageBytes  raw image bytes
+     * @param fileName    original file name (used only to infer the MIME type)
+     * @param noteContent surrounding note text for context
+     * @return text description, or {@code null} if the image exceeds the vision API size limit
+     */
+    public String describeImage(byte[] imageBytes, String fileName, String noteContent) {
+        log.debug("Describing image: {}", fileName);
+
+        try {
+            if (imageBytes.length > MAX_IMAGE_BYTES) {
+                log.warn("Skipping image {} ({} bytes) — exceeds {} byte limit for vision API",
+                        fileName, imageBytes.length, MAX_IMAGE_BYTES);
+                return null;
+            }
+
+            var imageResource = new ByteArrayResource(imageBytes) {
+                @Override
+                public String getFilename() {
+                    return fileName;
+                }
+            };
+            var media = new Media(getMimeType(fileName), imageResource);
+
+            var promptText = String.format(IMAGE_DESCRIPTION_PROMPT, noteContent);
+            var userMessage = UserMessage.builder().text(promptText).media(media).build();
+            var prompt = new Prompt(userMessage);
+
+            var response = anthropicChatModel.call(prompt);
+            String description = response.getResult().getOutput().getText();
+
+            log.debug("Generated description for {}: {} chars", fileName, description.length());
+            return description;
+
+        } catch (Exception e) {
+            log.error("Failed to describe image {}: {}", fileName, e.getMessage());
+            throw new RuntimeException("Failed to describe image: " + e.getMessage(), e);
+        }
+    }
+
     private org.springframework.util.MimeType getMimeType(Path imagePath) {
-        String fileName = imagePath.getFileName().toString().toLowerCase();
+        return getMimeType(imagePath.getFileName().toString());
+    }
+
+    private org.springframework.util.MimeType getMimeType(String fileNameRaw) {
+        String fileName = fileNameRaw.toLowerCase();
         if (fileName.endsWith(".png")) {
             return MimeTypeUtils.IMAGE_PNG;
         } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {

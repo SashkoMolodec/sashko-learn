@@ -1,5 +1,6 @@
 package com.sashkolearn.domain.service;
 
+import com.sashkolearn.config.NotesConfig;
 import com.sashkolearn.domain.entity.AiNote;
 import com.sashkolearn.domain.repository.AiNoteRepository;
 import com.sashkolearn.util.VectorUtils;
@@ -9,7 +10,6 @@ import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,8 +18,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -32,9 +31,8 @@ public class ReadService {
     private final AiNoteRepository aiNoteRepository;
     private final EmbeddingService embeddingService;
     private final AnthropicChatModel anthropicChatModel;
-
-    @Value("${notes.path}")
-    private String notesPath;
+    private final NotesConfig notesConfig;
+    private final ObsidianApiService obsidianApiService;
 
     private static final String SYSTEM_PROMPT = """
             Ти — асистент для конспектування. Прочитай наданий матеріал і створи
@@ -72,15 +70,12 @@ public class ReadService {
         String title = extractTitle(noteContent);
         String sanitizedFileName = sanitizeFileName(title) + ".md";
 
-        Path aiNotesDir = Path.of(notesPath, "ai_notes");
-        Files.createDirectories(aiNotesDir);
-        Path filePath = aiNotesDir.resolve(sanitizedFileName);
+        // Write into the vault over the Obsidian REST API (PUT creates the ai_notes folder as needed).
+        String filePathStr = notesConfig.getNotesFolder() + "/ai_notes/" + sanitizedFileName;
+        obsidianApiService.writeNote(filePathStr, noteContent);
+        log.info("Saved note to vault: {}", filePathStr);
 
-        Files.writeString(filePath, noteContent);
-        log.info("Saved note to: {}", filePath);
-
-        String filePathStr = filePath.toString();
-        long fileSize = noteContent.getBytes().length;
+        long fileSize = noteContent.getBytes(StandardCharsets.UTF_8).length;
 
         Optional<AiNote> existing = aiNoteRepository.findByFilePath(filePathStr);
         AiNote aiNote;

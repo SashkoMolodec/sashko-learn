@@ -56,13 +56,18 @@ services:
       - FILE_STORAGE_PATH=/var/sashko-learn/books
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OBSIDIAN_API_URL=${OBSIDIAN_API_URL:-https://host.docker.internal:27124}
+      # Laptop's Obsidian, exposed to the tailnet via `tailscale serve` (valid TLS cert).
+      # e.g. OBSIDIAN_API_URL=https://my-laptop.tailnet-name.ts.net
+      - OBSIDIAN_API_URL=${OBSIDIAN_API_URL}
       - OBSIDIAN_API_TOKEN=${OBSIDIAN_API_TOKEN}
     volumes:
       - sl_books:/var/sashko-learn/books
-      - /Users/okravch/my/sl/notes:/var/sashko-learn/notes:ro
+    # Docker's DNS doesn't resolve Tailscale MagicDNS names, and using the raw 100.x IP in the
+    # URL would break the TLS cert match. Map the MagicDNS hostname -> the laptop's Tailscale IP
+    # so the cert hostname is preserved while routing goes over the tailnet (Beelink must have
+    # Tailscale up). Set both via .env: OBSIDIAN_HOST and OBSIDIAN_TAILSCALE_IP.
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "${OBSIDIAN_HOST:-obsidian.invalid}:${OBSIDIAN_TAILSCALE_IP:-127.0.0.1}"
     depends_on:
       redis:
         condition: service_healthy

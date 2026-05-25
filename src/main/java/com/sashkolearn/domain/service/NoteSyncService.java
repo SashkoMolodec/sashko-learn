@@ -13,16 +13,12 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -34,26 +30,19 @@ public class NoteSyncService {
     private final AttachmentRepository attachmentRepository;
     private final EmbeddingService embeddingService;
     private final ImageReferenceParserService imageParser;
+    private final ObsidianApiService obsidianApiService;
 
     @Lazy
     @Autowired
     private NoteSyncService self;
 
     public SyncResult syncNotes() {
-        log.info("Starting notes synchronization from: {}", notesConfig.getPath());
+        log.info("Starting notes synchronization from Obsidian vault folder '{}'", notesConfig.getNotesFolder());
 
-        Path notesPath = Paths.get(notesConfig.getPath());
+        List<String> markdownPaths = obsidianApiService.listMarkdownFiles();
+        log.info("Found {} markdown files", markdownPaths.size());
 
-        if (!Files.exists(notesPath) || !Files.isDirectory(notesPath)) {
-            throw new IllegalStateException("Notes directory does not exist: " + notesPath);
-        }
-
-        List<Path> markdownFiles = findAllMarkdownFiles(notesPath);
-        log.info("Found {} markdown files", markdownFiles.size());
-
-        Set<String> diskFilePaths = markdownFiles.stream()
-                .map(path -> path.toAbsolutePath().toString())
-                .collect(Collectors.toSet());
+        Set<String> vaultPaths = new HashSet<>(markdownPaths);
 
         int newNotes = 0;
         int updatedNotes = 0;
@@ -61,9 +50,11 @@ public class NoteSyncService {
         int errorNotes = 0;
         List<UUID> changedNoteIds = new ArrayList<>();
 
-        for (Path file : markdownFiles) {
+        for (String vaultPath : markdownPaths) {
             try {
-                SyncActionResult actionResult = self.syncSingleNote(file);
+                // API read happens outside the per-note transaction
+                String content = obsidianApiService.readNote(vaultPath);
+                SyncActionResult actionResult = self.syncSingleNote(vaultPath, content);
                 switch (actionResult.action()) {
                     case CREATED -> {
                         newNotes++;
@@ -77,15 +68,15 @@ public class NoteSyncService {
                     case SKIPPED -> skippedNotes++;
                 }
             } catch (Exception e) {
-                log.error("Failed to sync note: {}", file, e);
+                log.error("Failed to sync note: {}", vaultPath, e);
                 errorNotes++;
             }
         }
 
-        int deletedNotes = self.deleteNotesNotOnDisk(diskFilePaths);
+        int deletedNotes = self.deleteNotesNotInVault(vaultPaths);
 
         SyncResult result = new SyncResult(
-                markdownFiles.size(),
+                markdownPaths.size(),
                 newNotes,
                 updatedNotes,
                 skippedNotes,
@@ -141,13 +132,11 @@ public class NoteSyncService {
     }
 
     @Transactional
-    public SyncActionResult syncSingleNote(Path file) throws IOException {
-        String absolutePath = file.toAbsolutePath().toString();
-        String fileName = file.getFileName().toString();
-        String content = Files.readString(file);
-        long fileSize = Files.size(file);
+    public SyncActionResult syncSingleNote(String vaultPath, String content) {
+        String fileName = fileNameOf(vaultPath);
+        long fileSize = content.getBytes(StandardCharsets.UTF_8).length;
 
-        var existingNote = noteRepository.findByFilePath(absolutePath);
+        var existingNote = noteRepository.findByFilePath(vaultPath);
 
         if (existingNote.isPresent()) {
             Note note = existingNote.get();
@@ -171,7 +160,7 @@ public class NoteSyncService {
         } else {
             Note newNote = Note.builder()
                     .fileName(fileName)
-                    .filePath(absolutePath)
+                    .filePath(vaultPath)
                     .content(content)
                     .fileSize(fileSize)
                     .build();
@@ -183,14 +172,14 @@ public class NoteSyncService {
     }
 
     @Transactional
-    public int deleteNotesNotOnDisk(Set<String> diskFilePaths) {
+    public int deleteNotesNotInVault(Set<String> vaultPaths) {
         List<Note> allNotes = noteRepository.findAll();
         List<Note> notesToDelete = new ArrayList<>();
 
         for (Note note : allNotes) {
-            if (!diskFilePaths.contains(note.getFilePath())) {
+            if (!vaultPaths.contains(note.getFilePath())) {
                 notesToDelete.add(note);
-                log.info("Note file no longer exists, marking for deletion: {}", note.getFileName());
+                log.info("Note no longer in vault, marking for deletion: {}", note.getFileName());
             }
         }
 
@@ -208,19 +197,9 @@ public class NoteSyncService {
         noteRepository.updateEmbedding(noteId, embeddingStr);
     }
 
-    private List<Path> findAllMarkdownFiles(Path rootPath) {
-        List<Path> markdownFiles = new ArrayList<>();
-
-        try (Stream<Path> paths = Files.walk(rootPath)) {
-            paths.filter(Files::isRegularFile)
-                    .filter(path -> path.toString().toLowerCase().endsWith(".md"))
-                    .forEach(markdownFiles::add);
-        } catch (IOException e) {
-            log.error("Failed to walk directory tree: {}", rootPath, e);
-            throw new RuntimeException("Failed to scan notes directory", e);
-        }
-
-        return markdownFiles;
+    private static String fileNameOf(String vaultPath) {
+        int slash = vaultPath.lastIndexOf('/');
+        return slash >= 0 ? vaultPath.substring(slash + 1) : vaultPath;
     }
 
     private String getEnrichedContent(Note note) {
