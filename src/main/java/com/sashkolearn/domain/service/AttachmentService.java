@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -44,6 +45,7 @@ public class AttachmentService {
         int processed = 0;
         int skipped = 0;
         int errors = 0;
+        List<String> warnings = new ArrayList<>();
 
         for (UUID noteId : changedNoteIds) {
             var noteOpt = noteRepository.findById(noteId);
@@ -72,6 +74,7 @@ public class AttachmentService {
                         imageBytes = obsidianApiService.readBinary(imageVaultPath);
                     } catch (RestClientResponseException e) {
                         log.warn("Image not found in vault: {} ({})", imageVaultPath, e.getStatusCode());
+                        warnings.add("• " + imageFileName + " — не знайдено у vault (" + note.getFileName() + ")");
                         errors++;
                         continue;
                     }
@@ -99,12 +102,13 @@ public class AttachmentService {
 
                 } catch (Exception e) {
                     log.error("Failed to process image {}: {}", imageFileName, e.getMessage());
+                    warnings.add("• " + imageFileName + " — помилка обробки: " + e.getMessage());
                     errors++;
                 }
             }
         }
 
-        AttachmentResult result = new AttachmentResult(processed, skipped, errors);
+        AttachmentResult result = new AttachmentResult(processed, skipped, errors, warnings);
         log.info("Attachment processing completed: {}", result);
         return result;
     }
@@ -166,6 +170,6 @@ public class AttachmentService {
         return attachmentRepository.findByNoteId(noteId);
     }
 
-    public record AttachmentResult(int processed, int skipped, int errors) {
+    public record AttachmentResult(int processed, int skipped, int errors, List<String> warnings) {
     }
 }

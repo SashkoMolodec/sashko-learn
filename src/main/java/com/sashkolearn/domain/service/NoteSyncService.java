@@ -49,6 +49,7 @@ public class NoteSyncService {
         int skippedNotes = 0;
         int errorNotes = 0;
         List<UUID> changedNoteIds = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
 
         for (String vaultPath : markdownPaths) {
             try {
@@ -70,6 +71,7 @@ public class NoteSyncService {
             } catch (Exception e) {
                 log.error("Failed to sync note: {}", vaultPath, e);
                 errorNotes++;
+                warnings.add("• " + vaultPath + " — " + rootCause(e));
             }
         }
 
@@ -82,23 +84,25 @@ public class NoteSyncService {
                 skippedNotes,
                 errorNotes,
                 deletedNotes,
-                changedNoteIds
+                changedNoteIds,
+                warnings
         );
 
         log.info("Sync completed: {}", result);
         return result;
     }
 
-    public int generateMissingEmbeddings() {
+    public EmbeddingResult generateMissingEmbeddings() {
         List<Note> notesWithoutEmbedding = noteRepository.findNotesWithoutEmbedding();
         log.info("Found {} notes without embeddings", notesWithoutEmbedding.size());
 
         if (notesWithoutEmbedding.isEmpty()) {
-            return 0;
+            return new EmbeddingResult(0, List.of());
         }
 
         int batchSize = notesConfig.getSync().getBatchSize();
         int processedCount = 0;
+        List<String> warnings = new ArrayList<>();
 
         for (int i = 0; i < notesWithoutEmbedding.size(); i += batchSize) {
             int end = Math.min(i + batchSize, notesWithoutEmbedding.size());
@@ -116,6 +120,7 @@ public class NoteSyncService {
                     if (enriched.length() > 10_000) {
                         log.warn("Note '{}' is large ({} chars) — will be truncated before embedding",
                                 note.getFileName(), enriched.length());
+                        warnings.add("• " + note.getFileName() + " — велика нотатка (" + enriched.length() + " символів), текст обрізано");
                     }
                     return enriched;
                 }).toList();
@@ -131,11 +136,12 @@ public class NoteSyncService {
                 processedCount += batch.size();
             } catch (Exception e) {
                 log.error("Failed to process batch starting at index {}", i, e);
+                batch.forEach(note -> warnings.add("• " + note.getFileName() + " — ембединг не згенеровано: " + rootCause(e)));
             }
         }
 
         log.info("Generated embeddings for {} notes", processedCount);
-        return processedCount;
+        return new EmbeddingResult(processedCount, warnings);
     }
 
     @Transactional
@@ -228,6 +234,13 @@ public class NoteSyncService {
         return imageRefs.stream().anyMatch(ref -> !attachmentRepository.existsByFileName(ref));
     }
 
+    private static String rootCause(Throwable t) {
+        Throwable cause = t;
+        while (cause.getCause() != null) cause = cause.getCause();
+        String msg = cause.getMessage();
+        return (msg != null && !msg.isBlank()) ? msg : cause.getClass().getSimpleName();
+    }
+
     private enum SyncAction {
         CREATED, UPDATED, ATTACHMENTS_MISSING, SKIPPED
     }
@@ -242,7 +255,11 @@ public class NoteSyncService {
             int skippedNotes,
             int errorNotes,
             int deletedNotes,
-            List<UUID> changedNoteIds
+            List<UUID> changedNoteIds,
+            List<String> warnings
     ) {
+    }
+
+    public record EmbeddingResult(int count, List<String> warnings) {
     }
 }
