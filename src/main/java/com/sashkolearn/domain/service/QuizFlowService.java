@@ -19,7 +19,7 @@ public class QuizFlowService {
 
     private static final String QUIZ_QUESTIONS_PREFIX = "quiz:questions:";
     private static final String POLL_MAPPING_PREFIX = "quiz:poll:";
-    private static final int QUIZ_DATA_TTL = 7200; // 2 hours
+    private static final int QUIZ_DATA_TTL = 172800; // 48 hours
 
     private final RedisService redisService;
     private final SessionManagementService sessionService;
