@@ -16,7 +16,8 @@ public class SessionManagementService {
 
     private static final String SESSION_PREFIX = "session:";
     private static final String QUIZ_SESSION_PREFIX = "quiz_session:";
-    private static final int SESSION_TTL = 3600; // 1 hour
+    private static final int SESSION_TTL = 3600;       // 1 hour (book upload flow)
+    private static final int QUIZ_SESSION_TTL = 172800; // 48 hours — matches QuizFlowService.QUIZ_DATA_TTL so poll mappings and session expire together
 
     public void saveCurrentBook(Long chatId, String bookId) {
         String key = SESSION_PREFIX + chatId + ":current_book";
@@ -37,7 +38,7 @@ public class SessionManagementService {
             "currentQuestion", String.valueOf(currentQuestion),
             "score", String.valueOf(score)
         );
-        redisService.setHash(key, session, SESSION_TTL);
+        redisService.setHash(key, session, QUIZ_SESSION_TTL);
         log.info("Saved quiz session for chat {}: quiz {}, question {}/{}, score {}",
                  chatId, quizId, currentQuestion, totalQuestions, score);
     }
