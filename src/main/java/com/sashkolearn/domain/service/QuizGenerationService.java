@@ -163,6 +163,7 @@ public class QuizGenerationService {
         return AnthropicChatOptions.builder()
                 .model(model)
                 .maxTokens(maxTokens)
+                .temperature(1.0)
                 .cacheOptions(AnthropicCacheOptions.builder()
                         .strategy(AnthropicCacheStrategy.SYSTEM_ONLY)
                         .build())
