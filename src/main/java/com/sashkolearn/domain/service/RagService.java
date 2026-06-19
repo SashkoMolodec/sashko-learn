@@ -38,6 +38,7 @@ public class RagService {
 
     private static final int TOP_SIMILAR_NOTES = 5;
     private static final int MAX_PHOTOS = 3;
+    private static final int MAX_CONTEXT_CHARS = 500_000;
 
     private static final String SYSTEM_PROMPT = """
             You are a knowledgeable assistant that answers questions based ONLY on the provided context from the user's personal notes.
@@ -135,6 +136,7 @@ public class RagService {
                 .collect(Collectors.groupingBy(Attachment::getNoteId));
 
         for (Note note : notes) {
+            if (sb.length() >= MAX_CONTEXT_CHARS) break;
             sb.append("--- File: ").append(note.getFileName()).append(" ---\n");
             sb.append(note.getContent()).append("\n");
 
@@ -151,6 +153,7 @@ public class RagService {
         }
 
         for (AiNote aiNote : aiNotes) {
+            if (sb.length() >= MAX_CONTEXT_CHARS) break;
             sb.append("--- [AI Note: ").append(aiNote.getFileName()).append("] ---\n");
             sb.append(aiNote.getContent()).append("\n\n");
         }
