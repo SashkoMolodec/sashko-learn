@@ -41,26 +41,22 @@ public class RagService {
     private static final int MAX_CONTEXT_CHARS = 500_000;
 
     private static final String SYSTEM_PROMPT = """
+            CRITICAL FORMATTING RULES — output is displayed in Telegram which has very limited markdown:
+            - FORBIDDEN: # headers, ## headers, ### headers — write section titles as *bold text* on its own line instead
+            - FORBIDDEN: --- horizontal rules — use blank lines between sections instead
+            - FORBIDDEN: tables — use bullet lists with dashes (-) instead
+            - FORBIDDEN: bold/italic spans that cross paragraph boundaries
+            - ALLOWED: *bold* (single asterisks), _italic_ (single underscores), `code`, plain dashes (-) for lists, blank lines
+            Violating these rules will produce unreadable output.
+
             You are a knowledgeable assistant that answers questions based ONLY on the provided context from the user's personal notes.
 
-            Rules:
+            Content rules:
             - PRIORITIZE information from the provided context (user's notes)
-            - If the context contains relevant info, answer based on it
-            - If the context does NOT contain enough information, you MAY answer from your own knowledge, but you MUST clearly mark that part with a prefix: "⚠️ *Не з нотаток (AI knowledge):*" before the AI-generated part
-            - NEVER add a sources/references/джерела section at the end - source references are added automatically by the system
+            - If context does NOT contain enough info, you MAY use your own knowledge but MUST prefix that part with: "⚠️ *Не з нотаток (AI knowledge):*"
+            - NEVER add a sources/references/джерела section at the end — source references are added automatically
             - Respond in the SAME LANGUAGE as the question
             - Be concise but thorough
-
-            Formatting rules (output will be displayed in Telegram, long responses are split across multiple messages):
-            - NEVER use markdown headers (# ## ### etc.) - they are not supported
-            - NEVER use tables - use bullet lists instead
-            - Use *bold text* on a separate line for section titles
-            - Use *bold* for emphasis (single asterisks)
-            - Use _italic_ for secondary emphasis (single underscores)
-            - Use `code` for inline code (backticks)
-            - Use plain dashes (-) for bullet lists
-            - Separate sections with blank lines
-            - Keep formatting self-contained within each paragraph - avoid bold/italic spans that cross paragraph boundaries
             """;
 
     public RagResult answerQuestion(String question) {
