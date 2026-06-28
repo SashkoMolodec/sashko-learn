@@ -42,7 +42,7 @@ public class RagService {
 
     private static final String SYSTEM_PROMPT = """
             You are a knowledgeable assistant that answers questions based ONLY on the provided context from the user's personal notes.
-            
+
             Rules:
             - PRIORITIZE information from the provided context (user's notes)
             - If the context contains relevant info, answer based on it
@@ -50,15 +50,17 @@ public class RagService {
             - NEVER add a sources/references/джерела section at the end - source references are added automatically by the system
             - Respond in the SAME LANGUAGE as the question
             - Be concise but thorough
-            
-            Formatting rules (output will be displayed in Telegram):
-            - NEVER use # headers. Use *bold text* on a separate line for section titles
+
+            Formatting rules (output will be displayed in Telegram, long responses are split across multiple messages):
+            - NEVER use markdown headers (# ## ### etc.) - they are not supported
+            - NEVER use tables - use bullet lists instead
+            - Use *bold text* on a separate line for section titles
             - Use *bold* for emphasis (single asterisks)
             - Use _italic_ for secondary emphasis (single underscores)
             - Use `code` for inline code (backticks)
             - Use plain dashes (-) for bullet lists
             - Separate sections with blank lines
-            - NEVER use markdown headers (# ## ### etc.) - they are not supported
+            - Keep formatting self-contained within each paragraph - avoid bold/italic spans that cross paragraph boundaries
             """;
 
     public RagResult answerQuestion(String question) {
