@@ -104,4 +104,21 @@ public class SessionManagementService {
         String key = PENDING_QUIZ_KEYNOTE_PREFIX + chatId;
         return redisService.get(key);
     }
+
+    // Pending quiz guide (optional -guide flag)
+    private static final String PENDING_QUIZ_GUIDE_PREFIX = "pending_quiz_guide:";
+
+    public void savePendingQuizGuide(Long chatId, String guide) {
+        String key = PENDING_QUIZ_GUIDE_PREFIX + chatId;
+        if (guide != null && !guide.isBlank()) {
+            redisService.set(key, guide, 300); // 5 minutes
+        } else {
+            redisService.delete(key);
+        }
+    }
+
+    public String getPendingQuizGuide(Long chatId) {
+        String key = PENDING_QUIZ_GUIDE_PREFIX + chatId;
+        return redisService.get(key);
+    }
 }

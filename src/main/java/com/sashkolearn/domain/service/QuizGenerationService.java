@@ -59,8 +59,8 @@ public class QuizGenerationService {
     }
 
     @Transactional
-    public GeneratedQuiz generateQuiz(String topic, Long chatId, String keyNoteName) {
-        log.info("Generating quiz for topic: {} by chatId: {}, keyNote: {}", topic, chatId, keyNoteName);
+    public GeneratedQuiz generateQuiz(String topic, Long chatId, String keyNoteName, String guide) {
+        log.info("Generating quiz for topic: {} by chatId: {}, keyNote: {}, guide: {}", topic, chatId, keyNoteName, guide);
 
         Optional<Quiz> existing = quizRepository.findByTopicIgnoreCase(topic);
         if (existing.isPresent()) {
@@ -84,7 +84,7 @@ public class QuizGenerationService {
 
         String notesContext = buildNotesContext(relevantNotes);
 
-        QuizResponse finalQuiz = callGenerate(topic, notesContext);
+        QuizResponse finalQuiz = callGenerate(topic, notesContext, guide);
         log.info("Got quiz with {} questions", finalQuiz.questions().size());
 
         Quiz quiz = Quiz.builder()
@@ -147,8 +147,11 @@ public class QuizGenerationService {
                 .toList();
     }
 
-    private QuizResponse callGenerate(String topic, String notesContext) {
+    private QuizResponse callGenerate(String topic, String notesContext, String guide) {
         String system = prompts.render("quiz/system.md", Map.of("notes", notesContext));
+        if (guide != null && !guide.isBlank()) {
+            system = system + "\n\nДОДАТКОВІ ІНСТРУКЦІЇ ВІД КОРИСТУВАЧА:\n" + guide;
+        }
         String user = prompts.render("quiz/user.md", Map.of("topic", topic));
 
         return chatClient.prompt()

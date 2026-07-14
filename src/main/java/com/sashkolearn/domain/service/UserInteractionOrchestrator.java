@@ -151,8 +151,9 @@ public class UserInteractionOrchestrator {
                 String topic = sessionService.getPendingQuizTopic(chatId);
                 if (topic == null) yield "❌ Тема не знайдена. Спробуй /quiz <topic> заново.";
                 String keyNoteName = sessionService.getPendingQuizKeyNote(chatId);
-                log.info("User wants new quiz on topic '{}' with keyNote '{}' in chat {}", topic, keyNoteName, chatId);
-                quizCommandHandler.submitGenerateAndStart(chatId, topic, keyNoteName);
+                String guide = sessionService.getPendingQuizGuide(chatId);
+                log.info("User wants new quiz on topic '{}' with keyNote '{}' guide '{}' in chat {}", topic, keyNoteName, guide, chatId);
+                quizCommandHandler.submitGenerateAndStart(chatId, topic, keyNoteName, guide);
                 yield "🎯 генерую квіз...";
             }
             default -> "❌ Невідома дія";

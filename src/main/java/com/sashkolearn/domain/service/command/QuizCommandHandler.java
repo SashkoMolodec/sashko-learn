@@ -56,29 +56,51 @@ public class QuizCommandHandler implements CommandHandler {
 
         String topic;
         String keyNoteName = null;
+        String guide = null;
+
         int keyIndex = args.indexOf(" -key ");
-        if (keyIndex != -1) {
-            topic = args.substring(0, keyIndex).trim();
-            keyNoteName = args.substring(keyIndex + 6).trim();
-        } else {
-            topic = args;
+        int guideIndex = args.indexOf(" -guide ");
+
+        String beforeFlags = args;
+        if (keyIndex != -1 && (guideIndex == -1 || keyIndex < guideIndex)) {
+            beforeFlags = args.substring(0, keyIndex).trim();
+            String afterKey = args.substring(keyIndex + 6).trim();
+            int guideInAfter = afterKey.indexOf(" -guide ");
+            if (guideInAfter != -1) {
+                keyNoteName = afterKey.substring(0, guideInAfter).trim();
+                guide = afterKey.substring(guideInAfter + 8).trim();
+            } else {
+                keyNoteName = afterKey;
+            }
+        } else if (guideIndex != -1) {
+            beforeFlags = args.substring(0, guideIndex).trim();
+            String afterGuide = args.substring(guideIndex + 8).trim();
+            int keyInAfter = afterGuide.indexOf(" -key ");
+            if (keyInAfter != -1) {
+                guide = afterGuide.substring(0, keyInAfter).trim();
+                keyNoteName = afterGuide.substring(keyInAfter + 6).trim();
+            } else {
+                guide = afterGuide;
+            }
         }
+        topic = beforeFlags;
 
         if (topic.isEmpty()) {
-            return "Usage: /quiz <topic> [-key <noteName>]";
+            return "Usage: /quiz <topic> [-key <noteName>] [-guide <guideline>]";
         }
 
-        log.info("Starting /quiz for chat {} topic '{}' keyNote '{}'", chatId, topic, keyNoteName);
+        log.info("Starting /quiz for chat {} topic '{}' keyNote '{}' guide '{}'", chatId, topic, keyNoteName, guide);
         sessionService.savePendingQuizTopic(chatId, topic);
         sessionService.savePendingQuizKeyNote(chatId, keyNoteName);
+        sessionService.savePendingQuizGuide(chatId, guide);
 
         final String topicFinal = topic;
         aiExecutor.execute(() -> runSearchQuizzes(chatId, topicFinal));
         return "🔎 шукаю квізи...";
     }
 
-    public void submitGenerateAndStart(Long chatId, String topic, String keyNoteName) {
-        aiExecutor.execute(() -> runGenerateAndStart(chatId, topic, keyNoteName));
+    public void submitGenerateAndStart(Long chatId, String topic, String keyNoteName, String guide) {
+        aiExecutor.execute(() -> runGenerateAndStart(chatId, topic, keyNoteName, guide));
     }
 
     public void submitFetchAndStart(Long chatId, UUID quizId) {
@@ -121,10 +143,10 @@ public class QuizCommandHandler implements CommandHandler {
         }
     }
 
-    private void runGenerateAndStart(Long chatId, String topic, String keyNoteName) {
+    private void runGenerateAndStart(Long chatId, String topic, String keyNoteName, String guide) {
         try {
             QuizGenerationService.GeneratedQuiz generated =
-                    quizGenerationService.generateQuiz(topic, chatId, keyNoteName);
+                    quizGenerationService.generateQuiz(topic, chatId, keyNoteName, guide);
 
             bot.sendMessage(chatId, String.format(
                     "✅ *Квіз створено!*\n\n_%s_\n\nКількість питань: *%d*\n\nЗавантажую питання...",
