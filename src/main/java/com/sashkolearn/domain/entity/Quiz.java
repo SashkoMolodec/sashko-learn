@@ -20,7 +20,7 @@ public class Quiz {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "topic", nullable = false, length = 500)
+    @Column(name = "topic", nullable = false, columnDefinition = "TEXT")
     private String topic;
 
     @Column(name = "description", nullable = false, columnDefinition = "TEXT")
